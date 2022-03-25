@@ -7,6 +7,9 @@ put GIFs in a gifs folder beside idnex.html file, any gif with matching name (pl
 
 25, March, 2022
 
+![Screenshot](https://github.com/zaidpirwani/PSL_Phrase_GIF/blob/main/psl-gif-maker.png?raw=true)
+
+
 
 ## INTERNSHIP/TRAINING PROJECT FOR PROSPECTING DEVELOPER / UI/UX Person
 FEATURES NEEDED:
