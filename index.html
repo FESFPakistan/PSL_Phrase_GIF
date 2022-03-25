@@ -1,0 +1,46 @@
+<html>
+  <head>
+    <title>PSL GIF SENTENCE MAKER</title>
+    <style type="text/css" media="screen">
+	.gifImage {
+		display: inline-block;
+		margin: 10px 5px;
+		text-align: center;
+	}
+	input { display: inline;}
+    </style>
+  </head>
+  <body>
+    <label for="fname">WRITE HERE:</label>
+    <input type="text" id="userInput" name="userInput" size="50">
+    <input type="button" id="submit" onclick="clickEvent();" value="Show GIFs!">
+	<br>
+	<div id="signGIFs">
+	</div>
+	<script type="text/javascript">
+		// Execute a function when the user releases a key on the keyboard
+		var input = document.getElementById("userInput");
+		input.addEventListener("keyup", function(event) {
+		  // Number 13 is the "Enter" key on the keyboard
+		  if (event.keyCode === 13) {
+			// Cancel the default action, if needed
+			event.preventDefault();
+			// Trigger the button element with a click
+			clickEvent();
+		  }
+		});
+		
+		function clickEvent() {
+		  let text = document.getElementById("userInput").value;
+		  if(text.length>1){
+			  const myArray = text.split(" ");
+			  let newCode = ""
+			  for (let i = 0; i < myArray.length; i++) {
+				newCode += "<div class=\"gifImage\"> <img src=\"gifs/" + myArray[i].toLowerCase() + "_onlysign.gif\" /><br>"+myArray[i]+"</div>";
+			  }
+			  document.getElementById("signGIFs").innerHTML = newCode;
+		  }
+		}
+	</script>
+  </body>
+</html>
