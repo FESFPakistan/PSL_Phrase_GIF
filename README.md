@@ -18,10 +18,13 @@ FEATURES NEEDED:
 * match to any form of verb,
 * ignore plurals,
 * auto expand contractions to match
-* match alphabets to CAPITAL letters only
 * use fuzzy searching, in addition to above
 * autocompletion in input box
 * auto refresh the gifs shown
 * show multiple matches (text) below gif, if multiple match
 * click to change gif to next best match
 * better UI/UX,  needs more explanation :)
+
+Some libraries that may help in getting to do this
+https://compromise.cool/
+https://fusejs.io/
