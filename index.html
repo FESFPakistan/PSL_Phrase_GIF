@@ -306,7 +306,7 @@
 
 // ── Configuration ────────────────────────────────────────────────────────────
 var CFG = {
-  FUSE_THRESHOLD:  0.42,  // 0=perfect match, 1=match anything
+  FUSE_THRESHOLD:  0.42,  // 0=exact only, 1=match anything; accepts matches with Fuse distance ≤ 0.42
   FUSE_MIN_CHARS:  2,     // minimum chars before fuzzy kicks in
   FUZZY_MAX_SCORE: 0.52,  // reject fuzzy hits with Fuse score above this
   SUGGESTION_LIMIT:8,     // max autocomplete items
@@ -408,7 +408,13 @@ function getLemma(word) {
 // Heuristic suffix-stripping stemmer (offline fallback).
 function simpleStem(word) {
   if (word.length <= 3) return word;
-  if (word.endsWith("ying")) return word.slice(0, -4) + "y";
+  if (word.endsWith("ying")) {
+    var sy1 = word.slice(0, -4) + "y";   // trying → try
+    var sy2 = word.slice(0, -3) + "ie";  // dying  → die
+    if (exactLookup.has(sy2)) return sy2;
+    if (exactLookup.has(sy1)) return sy1;
+    return sy1; // best-effort fallback
+  }
   if (word.endsWith("ing")) {
     var s = word.slice(0, -3);
     if (exactLookup.has(s))       return s;
@@ -628,10 +634,8 @@ function renderCards() {
       var alt     = esc(entry.baseWord);
 
       var mediaEl = isGif
-        ? '<img src="' + src + '" alt="' + alt + '" class="sign-media" loading="lazy" ' +
-            'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-        : '<video src="' + src + '" class="sign-media" autoplay loop muted playsinline ' +
-            'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"></video>';
+        ? '<img src="' + src + '" alt="' + alt + '" class="sign-media" loading="lazy">'
+        : '<video src="' + src + '" class="sign-media" autoplay loop muted playsinline></video>';
 
       var typedNote = pill.rawWord.toLowerCase() !== entry.baseWord.toLowerCase()
         ? '<div class="sign-input-word">\u2191 typed: ' + esc(pill.rawWord) + '</div>'
@@ -664,6 +668,17 @@ function renderCards() {
   container.querySelectorAll(".alt-btn").forEach(function(btn) {
     btn.addEventListener("click", function() {
       setCandidateIdx(parseInt(this.dataset.pill, 10), parseInt(this.dataset.cand, 10));
+    });
+  });
+
+  // Attach media-error handlers via addEventListener (avoids inline event attributes).
+  container.querySelectorAll(".sign-media").forEach(function(media) {
+    media.addEventListener("error", function() {
+      this.style.display = "none";
+      var placeholder = this.nextElementSibling;
+      if (placeholder && placeholder.classList.contains("sign-media-placeholder")) {
+        placeholder.style.display = "flex";
+      }
     });
   });
 }
@@ -771,7 +786,7 @@ function onPaste(e) {
 function esc(str) {
   return String(str)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

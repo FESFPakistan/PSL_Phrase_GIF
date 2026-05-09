@@ -12,6 +12,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
+    # 'prodmain' is the designated production branch for this project.
     branches: [prodmain]
   # Allow manual trigger from the Actions tab
   workflow_dispatch:
