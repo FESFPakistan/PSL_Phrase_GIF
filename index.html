@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PSL Phrase Video Maker</title>
 
+  <!-- Tailwind CSS (Play CDN – zero-build, static HTML compatible) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
   <!-- Fuse.js – client-side fuzzy search (no backend needed) -->
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
   <!-- Compromise – NLP lemmatizer / tense normalizer -->
@@ -12,273 +15,129 @@
   <!-- PSL word dictionary – must be loaded before app script -->
   <script src="words.js"></script>
 
-  <style>
-    /* ── Reset & base ───────────────────────────────────────────── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: #f0fdf4;
-      color: #1a2e1a;
-      min-height: 100vh;
-    }
+  <!--
+    Component classes used by JS-generated HTML are defined here with @apply
+    so they stay in sync with Tailwind without any build step.
+  -->
+  <style type="text/tailwindcss">
+    @layer components {
 
-    /* ── App shell ──────────────────────────────────────────────── */
-    .app {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 28px 16px 60px;
-    }
+      /* ── Pill container (typeahead input box) ── */
+      .pill-container {
+        @apply flex flex-wrap items-center gap-1.5
+               bg-white border-2 border-green-300 rounded-2xl
+               px-3.5 py-2.5 min-h-[54px] cursor-text
+               transition-all duration-200;
+      }
+      .pill-container:focus-within {
+        @apply border-green-600 ring-4 ring-green-500/10;
+      }
 
-    /* ── Header ─────────────────────────────────────────────────── */
-    header {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      margin-bottom: 32px;
-    }
-    header .logo { font-size: 2.4rem; line-height: 1; }
-    header h1 {
-      font-size: 1.6rem;
-      font-weight: 800;
-      color: #15803d;
-      letter-spacing: -0.5px;
-    }
-    header p { color: #4b7a57; font-size: 0.9rem; margin-top: 3px; }
+      /* ── Pill tags ── */
+      .pill {
+        @apply inline-flex items-center gap-1
+               bg-green-100 text-green-800
+               rounded-full py-1 pl-3 pr-2.5
+               text-sm font-semibold whitespace-nowrap select-none;
+      }
+      .pill.no-match {
+        @apply bg-slate-100 text-slate-400;
+      }
+      .pill-remove {
+        @apply bg-transparent border-0 cursor-pointer text-inherit
+               text-base leading-none opacity-55 px-0.5
+               transition-opacity hover:opacity-100;
+      }
 
-    /* ── Input section ──────────────────────────────────────────── */
-    .input-section { position: relative; }
+      /* ── Autocomplete dropdown ── */
+      .suggestions {
+        @apply absolute top-[calc(100%+4px)] left-0 right-0
+               bg-white border border-green-200 rounded-xl
+               shadow-lg z-50 overflow-hidden max-h-[310px] overflow-y-auto;
+      }
+      .suggestion-item {
+        @apply flex items-center gap-2.5 px-4 py-2.5
+               cursor-pointer transition-colors duration-100 hover:bg-green-50;
+      }
+      .suggestion-item.active { @apply bg-green-50; }
+      .suggestion-word { @apply font-semibold text-[0.95rem] flex-1; }
+      .suggestion-badge {
+        @apply text-[0.7rem] font-semibold px-2 py-0.5 rounded-xl;
+      }
+      .badge-prefix { @apply bg-blue-100 text-blue-700; }
+      .badge-exact  { @apply bg-green-100 text-green-800; }
+      .badge-lemma  { @apply bg-yellow-100 text-yellow-800; }
+      .badge-alias  { @apply bg-violet-100 text-violet-700; }
+      .badge-fuzzy  { @apply bg-red-100 text-red-800; }
 
-    .pill-container {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      background: #fff;
-      border: 2px solid #86efac;
-      border-radius: 14px;
-      padding: 10px 14px;
-      min-height: 54px;
-      cursor: text;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .pill-container:focus-within {
-      border-color: #16a34a;
-      box-shadow: 0 0 0 4px rgba(22,163,74,0.12);
-    }
+      /* ── Clear button ── */
+      .btn-clear {
+        @apply bg-transparent border border-gray-300 rounded-lg
+               px-3.5 py-1 text-sm cursor-pointer text-gray-500
+               transition-all duration-150
+               hover:bg-red-50 hover:border-red-300 hover:text-red-600;
+      }
 
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: #dcfce7;
-      color: #166534;
-      border-radius: 20px;
-      padding: 4px 10px 4px 12px;
-      font-size: 0.875rem;
-      font-weight: 600;
-      white-space: nowrap;
-      user-select: none;
-    }
-    .pill.no-match { background: #f1f5f9; color: #94a3b8; }
-    .pill-remove {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: inherit;
-      font-size: 1rem;
-      line-height: 1;
-      opacity: 0.55;
-      padding: 0 2px;
-      transition: opacity 0.15s;
-    }
-    .pill-remove:hover { opacity: 1; }
+      /* ── Sign cards grid ── */
+      .sign-cards { @apply flex flex-wrap gap-4; }
+      .sign-card {
+        @apply bg-white border border-green-100 rounded-2xl p-3.5 w-44
+               flex flex-col items-center gap-2 shadow-sm
+               transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+      }
+      .sign-card.no-match { @apply opacity-50; }
 
-    #typeaheadInput {
-      flex: 1;
-      min-width: 180px;
-      border: none;
-      outline: none;
-      font-size: 1rem;
-      background: transparent;
-      padding: 4px 2px;
-      color: #1a2e1a;
-    }
-    #typeaheadInput::placeholder { color: #a3bfa8; }
+      /* ── Media inside cards ── */
+      .sign-media {
+        @apply w-[148px] h-[148px] object-contain rounded-xl bg-green-50 block;
+      }
+      .sign-media-placeholder {
+        @apply w-[148px] h-[148px] rounded-xl bg-slate-100
+               flex items-center justify-center text-5xl text-slate-300;
+      }
+      .sign-label  { @apply font-bold text-[0.95rem] text-green-700 text-center; }
+      .sign-input-word { @apply text-[0.72rem] text-slate-400 text-center; }
 
-    /* ── Autocomplete dropdown ──────────────────────────────────── */
-    .suggestions {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0;
-      right: 0;
-      background: #fff;
-      border: 1px solid #bbf7d0;
-      border-radius: 10px;
-      box-shadow: 0 8px 28px rgba(0,0,0,0.10);
-      z-index: 200;
-      overflow: hidden;
-      max-height: 310px;
-      overflow-y: auto;
-    }
-    .suggestion-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 16px;
-      cursor: pointer;
-      transition: background 0.12s;
-    }
-    .suggestion-item:hover,
-    .suggestion-item.active { background: #f0fdf4; }
-    .suggestion-word { font-weight: 600; font-size: 0.95rem; flex: 1; }
-    .suggestion-badge {
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 12px;
-    }
-    .badge-prefix { background: #dbeafe; color: #1d4ed8; }
-    .badge-exact  { background: #dcfce7; color: #166534; }
-    .badge-lemma  { background: #fef9c3; color: #854d0e; }
-    .badge-alias  { background: #ede9fe; color: #6d28d9; }
-    .badge-fuzzy  { background: #fee2e2; color: #991b1b; }
+      /* ── Tier badges ── */
+      .tier-badge { @apply text-[0.68rem] font-bold px-2 py-0.5 rounded-xl; }
+      .tier-exact { @apply bg-green-100 text-green-800; }
+      .tier-lemma { @apply bg-yellow-100 text-yellow-800; }
+      .tier-alias { @apply bg-violet-100 text-violet-700; }
+      .tier-fuzzy { @apply bg-red-100 text-red-800; }
+      .tier-none  { @apply bg-slate-100 text-slate-400; }
 
-    /* ── Toolbar ────────────────────────────────────────────────── */
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 10px;
-      flex-wrap: wrap;
-    }
-    .btn-clear {
-      background: none;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
-      padding: 5px 14px;
-      font-size: 0.85rem;
-      cursor: pointer;
-      color: #6b7280;
-      transition: all 0.15s;
-    }
-    .btn-clear:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
-    .hint { font-size: 0.78rem; color: #86a88d; }
+      /* ── Alternate-candidate buttons ── */
+      .alt-buttons { @apply flex flex-wrap gap-1 justify-center w-full; }
+      .alt-btn {
+        @apply text-[0.68rem] px-2 py-0.5 rounded-xl
+               border border-green-100 bg-green-50 cursor-pointer text-green-700
+               transition-all duration-100
+               hover:bg-green-200 hover:border-green-300;
+      }
+      .alt-btn.active { @apply bg-green-600 text-white border-green-600; }
 
-    /* ── Section label ──────────────────────────────────────────── */
-    .section-label {
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #86a88d;
-      margin: 28px 0 12px;
-    }
+      /* ── Empty state ── */
+      .empty-state { @apply w-full text-center py-14 px-6 text-green-400; }
+      .empty-icon  { @apply text-5xl mb-3; }
 
-    /* ── Sign cards ─────────────────────────────────────────────── */
-    .sign-cards {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-    .sign-card {
-      background: #fff;
-      border: 1px solid #d1fae5;
-      border-radius: 14px;
-      padding: 14px;
-      width: 176px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-      transition: box-shadow 0.2s, transform 0.15s;
-    }
-    .sign-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.10); transform: translateY(-2px); }
-    .sign-card.no-match { opacity: 0.55; }
-
-    .sign-media {
-      width: 148px;
-      height: 148px;
-      object-fit: contain;
-      border-radius: 10px;
-      background: #f0fdf4;
-      display: block;
-    }
-    .sign-media-placeholder {
-      width: 148px;
-      height: 148px;
-      border-radius: 10px;
-      background: #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2.8rem;
-      color: #cbd5e1;
-    }
-    .sign-label { font-weight: 700; font-size: 0.95rem; color: #15803d; text-align: center; }
-    .sign-input-word { font-size: 0.72rem; color: #94a3b8; text-align: center; }
-
-    .tier-badge {
-      font-size: 0.68rem;
-      font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 10px;
-    }
-    .tier-exact { background: #dcfce7; color: #166534; }
-    .tier-lemma { background: #fef9c3; color: #854d0e; }
-    .tier-alias { background: #ede9fe; color: #6d28d9; }
-    .tier-fuzzy { background: #fee2e2; color: #991b1b; }
-    .tier-none  { background: #f1f5f9; color: #94a3b8; }
-
-    .alt-buttons {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      justify-content: center;
-      width: 100%;
-    }
-    .alt-btn {
-      font-size: 0.68rem;
-      padding: 2px 8px;
-      border-radius: 10px;
-      border: 1px solid #d1fae5;
-      background: #f0fdf4;
-      cursor: pointer;
-      color: #4b7a57;
-      transition: all 0.12s;
-    }
-    .alt-btn:hover { background: #bbf7d0; border-color: #86efac; }
-    .alt-btn.active { background: #16a34a; color: #fff; border-color: #16a34a; }
-
-    .empty-state {
-      width: 100%;
-      text-align: center;
-      padding: 52px 24px;
-      color: #86a88d;
-    }
-    .empty-state .empty-icon { font-size: 3.2rem; margin-bottom: 12px; }
-    .empty-state p { font-size: 1rem; }
-
-    @media (max-width: 480px) {
-      header h1 { font-size: 1.3rem; }
-      .sign-card { width: 140px; }
-      .sign-media, .sign-media-placeholder { width: 116px; height: 116px; }
     }
   </style>
 </head>
 
-<body>
-<div class="app">
+<body class="bg-green-50 text-gray-900 min-h-screen font-sans">
+<div class="max-w-4xl mx-auto px-4 pt-7 pb-16">
 
-  <header>
-    <span class="logo">🤟</span>
+  <!-- ── Header ── -->
+  <header class="flex items-center gap-3.5 mb-8">
+    <span class="text-5xl leading-none">🤟</span>
     <div>
-      <h1>PSL Phrase Video Maker</h1>
-      <p>Pakistan Sign Language · Type a phrase to see matching signs</p>
+      <h1 class="text-2xl font-extrabold text-green-700 tracking-tight">PSL Phrase Video Maker</h1>
+      <p class="text-green-800/70 text-sm mt-0.5">Pakistan Sign Language · Type a phrase to see matching signs</p>
     </div>
   </header>
 
-  <div class="input-section">
+  <!-- ── Phrase builder input ── -->
+  <div class="relative">
     <div class="pill-container" id="pillContainer">
       <input
         type="text"
@@ -286,20 +145,29 @@
         autocomplete="off"
         spellcheck="false"
         placeholder="Type a word or paste a phrase…"
+        class="flex-1 min-w-[180px] border-0 outline-none text-base bg-transparent py-1 px-0.5 text-gray-900 placeholder:text-green-300"
       />
     </div>
     <div class="suggestions" id="suggestions" hidden></div>
   </div>
 
-  <div class="toolbar">
+  <!-- ── Toolbar ── -->
+  <div class="flex items-center gap-2.5 mt-2.5 flex-wrap">
     <button class="btn-clear" id="clearBtn">✕ Clear all</button>
-    <span class="hint">Space / Enter / comma → add word &nbsp;·&nbsp; Backspace → remove last &nbsp;·&nbsp; Paste a full sentence</span>
+    <span class="text-xs text-green-500">
+      Space / Enter / comma → add word &nbsp;·&nbsp; Backspace → remove last &nbsp;·&nbsp; Paste a full sentence
+    </span>
   </div>
 
-  <div class="section-label" id="resultsLabel" hidden>Signs</div>
+  <!-- ── Results ── -->
+  <div
+    id="resultsLabel"
+    hidden
+    class="text-[0.75rem] font-bold tracking-widest uppercase text-green-400 mt-7 mb-3"
+  >Signs</div>
   <div class="sign-cards" id="signCards"></div>
 
-</div>
+</div><!-- /.max-w-4xl -->
 
 <script>
 "use strict";
