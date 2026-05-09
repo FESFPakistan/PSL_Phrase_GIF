@@ -306,7 +306,7 @@
 
 // ── Configuration ────────────────────────────────────────────────────────────
 var CFG = {
-  FUSE_THRESHOLD:  0.42,  // 0=exact only, 1=match anything; accepts matches with Fuse distance ≤ 0.42
+  FUSE_THRESHOLD:  0.42,  // Fuse distance: 0=exact match only, 1=match anything; lower=better; accepts score ≤ 0.42
   FUSE_MIN_CHARS:  2,     // minimum chars before fuzzy kicks in
   FUZZY_MAX_SCORE: 0.52,  // reject fuzzy hits with Fuse score above this
   SUGGESTION_LIMIT:8,     // max autocomplete items
@@ -413,7 +413,7 @@ function simpleStem(word) {
     var sy2 = word.slice(0, -3) + "ie";  // dying  → die
     if (exactLookup.has(sy2)) return sy2;
     if (exactLookup.has(sy1)) return sy1;
-    return sy1; // best-effort fallback
+    return word; // neither stem in dictionary; preserve original for fuzzy search
   }
   if (word.endsWith("ing")) {
     var s = word.slice(0, -3);

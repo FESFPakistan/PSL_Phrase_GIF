@@ -93,7 +93,7 @@ var WORD_DICTIONARY = [
 
   // ── Places ───────────────────────────────────────────────────────────────
   { baseWord: "house",      videoUrl: "gifs/house_onlysign.gif",      aliases: ["home", "building", "ghar"] },
-  { baseWord: "school",     videoUrl: "gifs/school_onlysign.gif",     aliases: ["college", "university", "madrasa", "school"] },
+  { baseWord: "school",     videoUrl: "gifs/school_onlysign.gif",     aliases: ["college", "university", "madrasa"] },
   { baseWord: "hospital",   videoUrl: "gifs/hospital_onlysign.gif",   aliases: ["clinic", "sick", "shifakhana"] },
   { baseWord: "mosque",     videoUrl: "gifs/mosque_onlysign.gif",     aliases: ["masjid", "prayer", "namaz"] },
   { baseWord: "market",     videoUrl: "gifs/market_onlysign.gif",     aliases: ["shop", "bazaar", "store", "mall", "bazar"] },
