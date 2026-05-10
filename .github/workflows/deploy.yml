@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Deploy to GitHub Pages on every push to `prodmain`
+#
+# Prerequisites (one-time, done in the GitHub UI):
+#   Settings → Pages → Source → GitHub Actions
+#
+# The entire repository root is published as a static site.
+# After deployment the live URL will be shown in the workflow summary, e.g.
+#   https://<org>.github.io/<repo>/
+# ─────────────────────────────────────────────────────────────────────────────
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    # 'prodmain' is the designated production branch for this project.
+    branches: [prodmain]
+  # Allow manual trigger from the Actions tab
+  workflow_dispatch:
+
+# Required for Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only allow one deployment at a time; cancel older queued runs, but do NOT
+# cancel a run that is already in the "deploy" phase.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # Upload the whole repo root as the static site artifact.
+      # Only files served by a browser are needed; .github/ is ignored by Pages.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
