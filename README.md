@@ -127,14 +127,6 @@ Below is a low-risk, commit-by-commit plan ordered from smallest impact to large
 
 **Impact:** moderate, mostly improves diagnostics and correctness.
 
-### Commit 5 — Reduce external dependency risk
-
-**Goal:** make the page resilient when offline.
-
-- vendor Tailwind/Fuse/Compromise locally or provide fallback builds
-- keep the static zero-build workflow intact
-
-**Impact:** larger distribution change, but low product-risk.
 
 ### Commit 6 — Split the monolith into maintainable files
 
@@ -143,6 +135,7 @@ Below is a low-risk, commit-by-commit plan ordered from smallest impact to large
 - move the script out of `index.html`
 - separate styles into a dedicated CSS file
 - keep `words.js` as data-only
+- keep the static zero-build workflow intact
 
 **Impact:** structural change, but low functional risk if done after the matcher stabilizes.
 
@@ -150,7 +143,6 @@ Below is a low-risk, commit-by-commit plan ordered from smallest impact to large
 
 **Goal:** protect future dictionary changes.
 
-- validate that every `videoUrl` resolves to a predictable path
 - test normalization, alias lookup, and fuzzy candidate ordering
 - catch duplicate or malformed entries early
 
