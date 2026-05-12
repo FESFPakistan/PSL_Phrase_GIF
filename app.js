@@ -13,8 +13,10 @@ var CFG = {
   SUGGESTION_LIMIT:8,     // max autocomplete items
   DEBOUNCE_MS:     140,   // typing debounce delay (ms)
   MAX_CANDIDATES:  3,     // max alternate candidates shown per sign card
+  DEBUG_ICON_EMOJI: "🤟", // hidden icon used for multi-click debug toggle
   DEBUG_ICON_CLICKS: 5,   // hidden debug-mode toggle: click icon N times quickly
-  DEBUG_ICON_MS:    1300, // click-window for hidden icon toggle
+  DEBUG_ICON_WINDOW_MS: 1300, // click-window for hidden icon toggle
+  DEBUG_SHORTCUT_KEY: "d", // keyboard key for debug-mode toggle (Ctrl+Shift+KEY)
 };
 
 // ── Stop words (ignored when tokenising pasted phrases) ──────────────────────
@@ -167,12 +169,28 @@ function simpleStem(word) {
 
 // Tokenise a free-text phrase (handles contractions + stop word removal).
 function tokenisePhrase(phrase) {
+  return tokenisePhraseDetailed(phrase).tokens;
+}
+
+function tokenisePhraseDetailed(phrase) {
   var text = phrase.toLowerCase().trim();
-  text = expandContractions(text);
-  text = text.replace(/[^a-z\s]/g, " ");
-  return text.split(/\s+/).filter(function(t) {
-    return t.length > 1 && !STOP_WORDS.has(t);
-  });
+  var expanded = expandContractions(text);
+  var cleaned = expanded.replace(/[^a-z\s]/g, " ");
+  var rawTokens = cleaned.split(/\s+/).filter(function(t) { return t.length > 0; });
+  var removedShortTokens = rawTokens.filter(function(t) { return t.length <= 1; });
+  var lengthFilteredTokens = rawTokens.filter(function(t) { return t.length > 1; });
+  var removedStopWords = lengthFilteredTokens.filter(function(t) { return STOP_WORDS.has(t); });
+  var tokens = lengthFilteredTokens.filter(function(t) { return !STOP_WORDS.has(t); });
+  return {
+    original: phrase,
+    expanded: expanded,
+    cleaned: cleaned,
+    rawTokens: rawTokens,
+    lengthFilteredTokens: lengthFilteredTokens,
+    removedShortTokens: removedShortTokens,
+    removedStopWords: removedStopWords,
+    tokens: tokens,
+  };
 }
 
 // ── Tiered matching ──────────────────────────────────────────────────────────
@@ -226,7 +244,7 @@ function findBestMatches(rawWord) {
         confidence: 1 - hScore,
         accepted: hScore < CFG.FUZZY_MAX_SCORE,
       });
-      if ((hits[i].score || 0) < CFG.FUZZY_MAX_SCORE) {
+      if (hScore < CFG.FUZZY_MAX_SCORE) {
         candidates.push({ entry: hits[i].item, score: 1 - hScore, tier: "fuzzy" });
       }
     }
@@ -241,10 +259,8 @@ function findBestMatches(rawWord) {
           confidence: (1 - lhScore) * 0.85,
           accepted: lhScore < CFG.FUZZY_MAX_SCORE && !already,
         });
-        if ((lhits[k].score || 0) < CFG.FUZZY_MAX_SCORE) {
-          if (!already) {
-            candidates.push({ entry: lhits[k].item, score: (1 - lhScore) * 0.85, tier: "fuzzy" });
-          }
+        if (lhScore < CFG.FUZZY_MAX_SCORE && !already) {
+          candidates.push({ entry: lhits[k].item, score: (1 - lhScore) * 0.85, tier: "fuzzy" });
         }
       }
     }
@@ -325,17 +341,16 @@ function addPill(rawWord) {
 }
 
 function addPhrasePills(phrase) {
-  var tokens = tokenisePhrase(phrase);
-  var expanded = expandContractions(phrase.toLowerCase().trim());
-  var cleaned = expanded.replace(/[^a-z\s]/g, " ");
-  var beforeStop = cleaned.split(/\s+/).filter(function(t) { return t.length > 1; });
+  var phraseInfo = tokenisePhraseDetailed(phrase);
+  var tokens = phraseInfo.tokens;
   lastPhraseDebug = {
-    original: phrase,
-    expanded: expanded,
-    cleaned: cleaned,
-    beforeStop: beforeStop,
+    original: phraseInfo.original,
+    expanded: phraseInfo.expanded,
+    cleaned: phraseInfo.cleaned,
+    beforeStop: phraseInfo.lengthFilteredTokens,
     afterStop: tokens,
-    removedStopWords: beforeStop.filter(function(t) { return STOP_WORDS.has(t); }),
+    removedStopWords: phraseInfo.removedStopWords,
+    removedShortTokens: phraseInfo.removedShortTokens,
   };
   for (var i = 0; i < tokens.length; i++) {
     var matchResult = findBestMatches(tokens[i]);
@@ -531,17 +546,22 @@ function renderDebugPanel() {
       '<div>original: <code>' + esc(lastPhraseDebug.original) + '</code></div>' +
       '<div>expanded contractions: <code>' + esc(lastPhraseDebug.expanded) + '</code></div>' +
       '<div>cleaned input: <code>' + esc(lastPhraseDebug.cleaned) + '</code></div>' +
-      '<div>tokens before stop-word filter: <code>' + esc(lastPhraseDebug.beforeStop.join(", ")) + '</code></div>' +
-      '<div>removed stop-words: <code>' + esc(lastPhraseDebug.removedStopWords.join(", ") || "none") + '</code></div>' +
-      '<div>tokens used for matching: <code>' + esc(lastPhraseDebug.afterStop.join(", ") || "none") + '</code></div>';
+      '<div>tokens after removing short words (len ≤ 1): <code>' + esc(lastPhraseDebug.beforeStop.join(", ")) + '</code></div>' +
+      '<div>removed stop-words: <code>' + esc(lastPhraseDebug.removedStopWords.length ? lastPhraseDebug.removedStopWords.join(", ") : "none") + '</code></div>' +
+      '<div>removed short tokens (len ≤ 1): <code>' + esc(lastPhraseDebug.removedShortTokens.length ? lastPhraseDebug.removedShortTokens.join(", ") : "none") + '</code></div>' +
+      '<div>tokens used for matching: <code>' + esc(lastPhraseDebug.afterStop.length ? lastPhraseDebug.afterStop.join(", ") : "none") + '</code></div>';
   }
 
   panel.innerHTML =
     '<div class="text-[0.72rem] text-slate-700 bg-slate-100 border border-slate-300 rounded-xl px-3 py-2">' +
       '<div class="font-bold mb-1">Debug mode active</div>' +
-      '<div>Toggle with <code>Ctrl + Shift + D</code> or click 🤟 icon ' + CFG.DEBUG_ICON_CLICKS + ' times.</div>' +
+      '<div>Toggle with <code>' + esc(getDebugShortcutLabel()) + '</code> or click ' + esc(CFG.DEBUG_ICON_EMOJI) + ' icon ' + CFG.DEBUG_ICON_CLICKS + ' times.</div>' +
       '<div class="mt-1">' + phraseHtml + '</div>' +
     '</div>';
+}
+
+function getDebugShortcutLabel() {
+  return "Ctrl + Shift + " + String(CFG.DEBUG_SHORTCUT_KEY || "d").toUpperCase();
 }
 
 // ── Autocomplete UI ──────────────────────────────────────────────────────────
@@ -671,10 +691,11 @@ document.addEventListener("DOMContentLoaded", function() {
     input.focus();
   });
   if (debugIcon) {
+    debugIcon.textContent = CFG.DEBUG_ICON_EMOJI;
     debugIcon.addEventListener("click", function() {
       debugIconClickCount += 1;
       clearTimeout(debugIconTimer);
-      debugIconTimer = setTimeout(function() { debugIconClickCount = 0; }, CFG.DEBUG_ICON_MS);
+      debugIconTimer = setTimeout(function() { debugIconClickCount = 0; }, CFG.DEBUG_ICON_WINDOW_MS);
       if (debugIconClickCount >= CFG.DEBUG_ICON_CLICKS) {
         debugIconClickCount = 0;
         clearTimeout(debugIconTimer);
@@ -683,7 +704,11 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
   document.addEventListener("keydown", function(e) {
-    if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === "d") {
+    var target = e.target || null;
+    var tag = (target && target.tagName) ? target.tagName.toLowerCase() : "";
+    var isEditable = tag === "input" || tag === "textarea" || (target && target.isContentEditable);
+    if (isEditable) return;
+    if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === CFG.DEBUG_SHORTCUT_KEY) {
       e.preventDefault();
       toggleDebugMode("keyboard");
     }
