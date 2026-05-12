@@ -13,6 +13,10 @@ var CFG = {
   SUGGESTION_LIMIT:8,     // max autocomplete items
   DEBOUNCE_MS:     140,   // typing debounce delay (ms)
   MAX_CANDIDATES:  3,     // max alternate candidates shown per sign card
+  DEBUG_ICON_EMOJI: "🤟", // hidden icon used for multi-click debug toggle
+  DEBUG_ICON_CLICKS: 5,   // hidden debug-mode toggle: click icon N times quickly
+  DEBUG_ICON_WINDOW_MS: 1300, // click-window for hidden icon toggle
+  DEBUG_SHORTCUT_KEY: "d", // keyboard key for debug-mode toggle (Ctrl+Shift+KEY)
 };
 
 // ── Stop words (ignored when tokenising pasted phrases) ──────────────────────
@@ -53,6 +57,10 @@ var CONTRACTIONS = {
 // ── Search index (built on startup) ─────────────────────────────────────────
 var exactLookup = new Map();
 var fuseIndex;
+var debugModeEnabled = false;
+var debugIconClickCount = 0;
+var debugIconTimer;
+var lastPhraseDebug = null;
 
 function buildSearchIndex() {
   exactLookup.clear();
@@ -161,29 +169,67 @@ function simpleStem(word) {
 
 // Tokenise a free-text phrase (handles contractions + stop word removal).
 function tokenisePhrase(phrase) {
+  return tokenisePhraseDetailed(phrase).tokens;
+}
+
+function tokenisePhraseDetailed(phrase) {
   var text = phrase.toLowerCase().trim();
-  text = expandContractions(text);
-  text = text.replace(/[^a-z\s]/g, " ");
-  return text.split(/\s+/).filter(function(t) {
-    return t.length > 1 && !STOP_WORDS.has(t);
-  });
+  var expanded = expandContractions(text);
+  var cleaned = expanded.replace(/[^a-z\s]/g, " ");
+  var rawTokens = cleaned.split(/\s+/).filter(function(t) { return t.length > 0; });
+  var removedShortTokens = rawTokens.filter(function(t) { return t.length <= 1; });
+  var lengthFilteredTokens = rawTokens.filter(function(t) { return t.length > 1; });
+  var removedStopWords = lengthFilteredTokens.filter(function(t) { return STOP_WORDS.has(t); });
+  var tokens = lengthFilteredTokens.filter(function(t) { return !STOP_WORDS.has(t); });
+  return {
+    original: phrase,
+    expanded: expanded,
+    cleaned: cleaned,
+    rawTokens: rawTokens,
+    lengthFilteredTokens: lengthFilteredTokens,
+    removedShortTokens: removedShortTokens,
+    removedStopWords: removedStopWords,
+    tokens: tokens,
+  };
 }
 
 // ── Tiered matching ──────────────────────────────────────────────────────────
 // Returns [{entry, score, tier}] sorted best-first.
 function findBestMatches(rawWord) {
+  var debug = {
+    rawWord: rawWord,
+    normalised: "",
+    lemma: "",
+    selectedTier: "none",
+    decision: "",
+    fuzzyNormHits: [],
+    fuzzyLemmaHits: [],
+  };
   var norm = normaliseWord(rawWord);
-  if (!norm) return [];
+  debug.normalised = norm;
+  if (!norm) {
+    debug.decision = "normalised-to-empty";
+    return { candidates: [], debug: debug };
+  }
 
   // Tier 1 – exact
   var e1 = exactLookup.get(norm);
-  if (e1) return [{ entry: e1, score: 1.0, tier: "exact" }];
+  if (e1) {
+    debug.selectedTier = "exact";
+    debug.decision = "exact-lookup-hit";
+    return { candidates: [{ entry: e1, score: 1.0, tier: "exact" }], debug: debug };
+  }
 
   // Tier 2 – lemma
   var lemma = getLemma(norm);
+  debug.lemma = lemma;
   if (lemma !== norm) {
     var e2 = exactLookup.get(lemma);
-    if (e2) return [{ entry: e2, score: 0.9, tier: "lemma" }];
+    if (e2) {
+      debug.selectedTier = "lemma";
+      debug.decision = "lemma-lookup-hit";
+      return { candidates: [{ entry: e2, score: 0.9, tier: "lemma" }], debug: debug };
+    }
   }
 
   // Tier 3 – fuzzy
@@ -191,23 +237,44 @@ function findBestMatches(rawWord) {
   if (norm.length >= CFG.FUSE_MIN_CHARS) {
     var hits = fuseIndex.search(norm);
     for (var i = 0; i < Math.min(hits.length, CFG.MAX_CANDIDATES * 2); i++) {
-      if ((hits[i].score || 0) < CFG.FUZZY_MAX_SCORE) {
-        candidates.push({ entry: hits[i].item, score: 1 - (hits[i].score || 0), tier: "fuzzy" });
+      var hScore = hits[i].score || 0;
+      debug.fuzzyNormHits.push({
+        baseWord: hits[i].item.baseWord,
+        rawScore: hScore,
+        confidence: 1 - hScore,
+        accepted: hScore < CFG.FUZZY_MAX_SCORE,
+      });
+      if (hScore < CFG.FUZZY_MAX_SCORE) {
+        candidates.push({ entry: hits[i].item, score: 1 - hScore, tier: "fuzzy" });
       }
     }
     if (lemma !== norm) {
       var lhits = fuseIndex.search(lemma);
       for (var k = 0; k < Math.min(lhits.length, 2); k++) {
-        if ((lhits[k].score || 0) < CFG.FUZZY_MAX_SCORE) {
-          var already = candidates.some(function(c) { return c.entry.baseWord === lhits[k].item.baseWord; });
-          if (!already) {
-            candidates.push({ entry: lhits[k].item, score: (1 - (lhits[k].score || 0)) * 0.85, tier: "fuzzy" });
-          }
+        var lhScore = lhits[k].score || 0;
+        var already = candidates.some(function(c) { return c.entry.baseWord === lhits[k].item.baseWord; });
+        debug.fuzzyLemmaHits.push({
+          baseWord: lhits[k].item.baseWord,
+          rawScore: lhScore,
+          confidence: (1 - lhScore) * 0.85,
+          accepted: lhScore < CFG.FUZZY_MAX_SCORE && !already,
+        });
+        if (lhScore < CFG.FUZZY_MAX_SCORE && !already) {
+          candidates.push({ entry: lhits[k].item, score: (1 - lhScore) * 0.85, tier: "fuzzy" });
         }
       }
     }
+  } else {
+    debug.decision = "below-fuzzy-min-chars";
   }
-  return candidates.sort(function(a, b) { return b.score - a.score; }).slice(0, CFG.MAX_CANDIDATES);
+  candidates = candidates.sort(function(a, b) { return b.score - a.score; }).slice(0, CFG.MAX_CANDIDATES);
+  if (candidates.length > 0) {
+    debug.selectedTier = "fuzzy";
+    debug.decision = "fuzzy-candidates-selected";
+  } else if (!debug.decision) {
+    debug.decision = "no-candidates";
+  }
+  return { candidates: candidates, debug: debug };
 }
 
 // ── Autocomplete suggestions ─────────────────────────────────────────────────
@@ -260,24 +327,38 @@ function getSuggestions(rawInput) {
 }
 
 // ── Pill state ───────────────────────────────────────────────────────────────
-// pills = [{ rawWord, candidates:[{entry,score,tier}], candidateIdx }]
+// pills = [{ rawWord, candidates:[{entry,score,tier}], debug, candidateIdx }]
 var pills = [];
 
 function addPill(rawWord) {
   var word = rawWord.trim();
   if (!word) return;
-  pills.push({ rawWord: word, candidates: findBestMatches(word), candidateIdx: 0 });
+  var matchResult = findBestMatches(word);
+  pills.push({ rawWord: word, candidates: matchResult.candidates, debug: matchResult.debug, candidateIdx: 0 });
   renderPills();
   renderCards();
+  renderDebugPanel();
 }
 
 function addPhrasePills(phrase) {
-  var tokens = tokenisePhrase(phrase);
+  var phraseInfo = tokenisePhraseDetailed(phrase);
+  var tokens = phraseInfo.tokens;
+  lastPhraseDebug = {
+    original: phraseInfo.original,
+    expanded: phraseInfo.expanded,
+    cleaned: phraseInfo.cleaned,
+    beforeStop: phraseInfo.lengthFilteredTokens,
+    afterStop: tokens,
+    removedStopWords: phraseInfo.removedStopWords,
+    removedShortTokens: phraseInfo.removedShortTokens,
+  };
   for (var i = 0; i < tokens.length; i++) {
-    pills.push({ rawWord: tokens[i], candidates: findBestMatches(tokens[i]), candidateIdx: 0 });
+    var matchResult = findBestMatches(tokens[i]);
+    pills.push({ rawWord: tokens[i], candidates: matchResult.candidates, debug: matchResult.debug, candidateIdx: 0 });
   }
   renderPills();
   renderCards();
+  renderDebugPanel();
 }
 
 function removePill(idx) {
@@ -288,13 +369,16 @@ function removePill(idx) {
 
 function clearAll() {
   pills = [];
+  lastPhraseDebug = null;
   renderPills();
   renderCards();
+  renderDebugPanel();
 }
 
 function setCandidateIdx(pillIdx, candIdx) {
   pills[pillIdx].candidateIdx = candIdx;
   renderCards();
+  renderDebugPanel();
 }
 
 // ── Render pills ─────────────────────────────────────────────────────────────
@@ -388,7 +472,8 @@ function renderCards() {
         '<div class="sign-label">' + esc(entry.baseWord) + '</div>' +
         typedNote +
         '<span class="tier-badge tier-' + match.tier + '">' + match.tier + '</span>' +
-        altBtns;
+        altBtns +
+        (debugModeEnabled ? renderCardDebug(pill, match) : "");
     }
 
     container.appendChild(card);
@@ -410,6 +495,73 @@ function renderCards() {
       }
     });
   });
+}
+
+function renderCardDebug(pill, match) {
+  var debug = pill.debug || {};
+  var normHits = (debug.fuzzyNormHits || []).map(function(h) {
+    return esc(h.baseWord) + " (" + (h.rawScore || 0).toFixed(3) + ", " + (h.accepted ? "kept" : "rejected") + ")";
+  }).join(", ");
+  var lemmaHits = (debug.fuzzyLemmaHits || []).map(function(h) {
+    return esc(h.baseWord) + " (" + (h.rawScore || 0).toFixed(3) + ", " + (h.accepted ? "kept" : "rejected") + ")";
+  }).join(", ");
+  return (
+    '<div class="w-full mt-2 p-2 rounded-lg bg-slate-50 border border-slate-200 text-[0.67rem] text-slate-600 text-left">' +
+      '<div><strong>debug</strong> · decision: ' + esc(debug.decision || "n/a") + '</div>' +
+      '<div>raw: <code>' + esc(debug.rawWord || pill.rawWord) + '</code></div>' +
+      '<div>normalised: <code>' + esc(debug.normalised || "") + '</code></div>' +
+      '<div>lemma: <code>' + esc(debug.lemma || (debug.normalised || "")) + '</code></div>' +
+      '<div>selected tier: <code>' + esc(debug.selectedTier || match.tier || "none") + '</code></div>' +
+      '<div>selected word: <code>' + esc(match.entry.baseWord) + '</code></div>' +
+      '<div>selected score: <code>' + (match.score || 0).toFixed(3) + '</code></div>' +
+      '<div>fuzzy hits (norm): ' + (normHits ? '<code>' + normHits + '</code>' : '<code>none</code>') + '</div>' +
+      '<div>fuzzy hits (lemma): ' + (lemmaHits ? '<code>' + lemmaHits + '</code>' : '<code>none</code>') + '</div>' +
+    '</div>'
+  );
+}
+
+function setDebugMode(enabled, source) {
+  debugModeEnabled = !!enabled;
+  var panel = document.getElementById("debugPanel");
+  if (panel) panel.hidden = !debugModeEnabled;
+  renderCards();
+  renderDebugPanel();
+  console.info("[PSL] Debug mode " + (debugModeEnabled ? "enabled" : "disabled") + (source ? " via " + source : ""));
+}
+
+function toggleDebugMode(source) {
+  setDebugMode(!debugModeEnabled, source);
+}
+
+function renderDebugPanel() {
+  var panel = document.getElementById("debugPanel");
+  if (!panel) return;
+  if (!debugModeEnabled) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  var phraseHtml = '<div><strong>last phrase transform:</strong> none</div>';
+  if (lastPhraseDebug) {
+    phraseHtml =
+      '<div><strong>last phrase transform</strong></div>' +
+      '<div>original: <code>' + esc(lastPhraseDebug.original) + '</code></div>' +
+      '<div>expanded contractions: <code>' + esc(lastPhraseDebug.expanded) + '</code></div>' +
+      '<div>cleaned input: <code>' + esc(lastPhraseDebug.cleaned) + '</code></div>' +
+      '<div>tokens after removing short words (len ≤ 1): <code>' + esc(lastPhraseDebug.beforeStop.join(", ")) + '</code></div>' +
+      '<div>removed stop-words: <code>' + esc(lastPhraseDebug.removedStopWords.length ? lastPhraseDebug.removedStopWords.join(", ") : "none") + '</code></div>' +
+      '<div>removed short tokens (len ≤ 1): <code>' + esc(lastPhraseDebug.removedShortTokens.length ? lastPhraseDebug.removedShortTokens.join(", ") : "none") + '</code></div>' +
+      '<div>tokens used for matching: <code>' + esc(lastPhraseDebug.afterStop.length ? lastPhraseDebug.afterStop.join(", ") : "none") + '</code></div>';
+  }
+
+  panel.innerHTML =
+    '<div class="text-[0.72rem] text-slate-700 bg-slate-100 border border-slate-300 rounded-xl px-3 py-2">' +
+      '<div class="font-bold mb-1">Debug mode active</div>' +
+      '<div>Toggle with <code>' + esc(getDebugShortcutLabel()) + '</code> or click ' + esc(CFG.DEBUG_ICON_EMOJI) + ' icon ' + CFG.DEBUG_ICON_CLICKS + ' times.</div>' +
+      '<div class="mt-1">' + phraseHtml + '</div>' +
+    '</div>';
+}
+
+function getDebugShortcutLabel() {
+  return "Ctrl + Shift + " + String(CFG.DEBUG_SHORTCUT_KEY || "d").toUpperCase();
 }
 
 // ── Autocomplete UI ──────────────────────────────────────────────────────────
@@ -525,6 +677,7 @@ document.addEventListener("DOMContentLoaded", function() {
   var input    = document.getElementById("typeaheadInput");
   var pillBox  = document.getElementById("pillContainer");
   var clearBtn = document.getElementById("clearBtn");
+  var debugIcon = document.getElementById("debugToggleIcon");
 
   input.addEventListener("input",   onInput);
   input.addEventListener("keydown", onKeydown);
@@ -537,6 +690,30 @@ document.addEventListener("DOMContentLoaded", function() {
     hideSuggestions();
     input.focus();
   });
+  if (debugIcon) {
+    debugIcon.textContent = CFG.DEBUG_ICON_EMOJI;
+    debugIcon.addEventListener("click", function() {
+      debugIconClickCount += 1;
+      clearTimeout(debugIconTimer);
+      debugIconTimer = setTimeout(function() { debugIconClickCount = 0; }, CFG.DEBUG_ICON_WINDOW_MS);
+      if (debugIconClickCount >= CFG.DEBUG_ICON_CLICKS) {
+        debugIconClickCount = 0;
+        clearTimeout(debugIconTimer);
+        toggleDebugMode("icon-multiclick");
+      }
+    });
+  }
+  document.addEventListener("keydown", function(e) {
+    var target = e.target || null;
+    var tag = (target && target.tagName) ? target.tagName.toLowerCase() : "";
+    var isEditable = tag === "input" || tag === "textarea" || (target && target.isContentEditable);
+    if (isEditable) return;
+    if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === CFG.DEBUG_SHORTCUT_KEY) {
+      e.preventDefault();
+      toggleDebugMode("keyboard");
+    }
+  });
 
   renderCards(); // show empty state
+  renderDebugPanel();
 });

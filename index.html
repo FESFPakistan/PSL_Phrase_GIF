@@ -133,7 +133,7 @@
 
   <!-- ── Header ── -->
   <header class="flex items-center gap-3.5 mb-8">
-    <span class="text-5xl leading-none">🤟</span>
+    <span id="debugToggleIcon" class="text-5xl leading-none select-none cursor-default" title="PSL">🤟</span>
     <div>
       <h1 class="text-2xl font-extrabold text-green-700 tracking-tight">PSL Phrase Video Maker</h1>
       <p class="text-green-800/70 text-sm mt-0.5">Pakistan Sign Language · Type a phrase to see matching signs</p>
@@ -162,6 +162,7 @@
       Space / Enter / comma → add word &nbsp;·&nbsp; Backspace → remove last &nbsp;·&nbsp; Paste a full sentence
     </span>
   </div>
+  <div id="debugPanel" class="mt-3" hidden></div>
 
   <!-- ── Results ── -->
   <div
