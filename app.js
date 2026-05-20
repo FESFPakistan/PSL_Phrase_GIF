@@ -3,7 +3,7 @@
 // ── Media configuration ───────────────────────────────────────────────────────
 // Set MEDIA_BASE_URL to your CloudFront distribution URL (no trailing slash).
 // Set to "" to serve media from the local gifs/ folder beside index.html.
-var MEDIA_BASE_URL = "https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net";
+var MEDIA_BASE_URL = "https://d18qapjg363q5r.cloudfront.net/public/psl-phrase/";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 var CFG = {
@@ -442,13 +442,10 @@ function renderCards() {
     } else {
       var match   = pill.candidates[pill.candidateIdx || 0];
       var entry   = match.entry;
-      var isGif   = /\.gif$/i.test(entry.videoUrl);
       var src     = esc(mediaUrl(entry.videoUrl));
       var alt     = esc(entry.baseWord);
 
-      var mediaEl = isGif
-        ? '<img src="' + src + '" alt="' + alt + '" class="sign-media" loading="lazy">'
-        : '<video src="' + src + '" class="sign-media" autoplay loop muted playsinline></video>';
+      var mediaEl = '<video src="' + src + '" class="sign-media" autoplay loop muted playsinline></video>';
 
       var typedNote = pill.rawWord.toLowerCase() !== entry.baseWord.toLowerCase()
         ? '<div class="sign-input-word">↑ typed: ' + esc(pill.rawWord) + '</div>'
