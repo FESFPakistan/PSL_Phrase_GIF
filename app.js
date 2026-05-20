@@ -3,7 +3,7 @@
 // ── Media configuration ───────────────────────────────────────────────────────
 // Set MEDIA_BASE_URL to your CloudFront distribution URL (no trailing slash).
 // Set to "" to serve media from the local gifs/ folder beside index.html.
-var MEDIA_BASE_URL = "https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net";
+var MEDIA_BASE_URL = "https://d18qapjg363q5r.cloudfront.net/public/psl-phrase/";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 var CFG = {
@@ -436,19 +436,17 @@ function renderCards() {
 
     if (!hasMatch) {
       card.innerHTML =
+        '<button class="card-remove" data-idx="' + pillIdx + '" title="Remove word">✕</button>' +
         '<div class="sign-media-placeholder">🤷</div>' +
         '<div class="sign-label">' + esc(pill.rawWord) + '</div>' +
         '<span class="tier-badge tier-none">not found</span>';
     } else {
       var match   = pill.candidates[pill.candidateIdx || 0];
       var entry   = match.entry;
-      var isGif   = /\.gif$/i.test(entry.videoUrl);
       var src     = esc(mediaUrl(entry.videoUrl));
       var alt     = esc(entry.baseWord);
 
-      var mediaEl = isGif
-        ? '<img src="' + src + '" alt="' + alt + '" class="sign-media" loading="lazy">'
-        : '<video src="' + src + '" class="sign-media" autoplay loop muted playsinline></video>';
+      var mediaEl = '<video src="' + src + '" class="sign-media" autoplay loop muted playsinline></video>';
 
       var typedNote = pill.rawWord.toLowerCase() !== entry.baseWord.toLowerCase()
         ? '<div class="sign-input-word">↑ typed: ' + esc(pill.rawWord) + '</div>'
@@ -467,6 +465,7 @@ function renderCards() {
       }
 
       card.innerHTML =
+        '<button class="card-remove" data-idx="' + pillIdx + '" title="Remove word">✕</button>' +
         mediaEl +
         '<div class="sign-media-placeholder" style="display:none">📷</div>' +
         '<div class="sign-label">' + esc(entry.baseWord) + '</div>' +
@@ -482,6 +481,12 @@ function renderCards() {
   container.querySelectorAll(".alt-btn").forEach(function(btn) {
     btn.addEventListener("click", function() {
       setCandidateIdx(parseInt(this.dataset.pill, 10), parseInt(this.dataset.cand, 10));
+    });
+  });
+
+  container.querySelectorAll(".card-remove").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      removePill(parseInt(this.dataset.idx, 10));
     });
   });
 
@@ -629,9 +634,17 @@ function onKeydown(e) {
   if (e.key === "Escape")     { hideSuggestions(); return; }
 
   if (e.key === "Enter" || e.key === " " || e.key === ",") {
-    if (!dropdown.hidden && activeSuggIdx >= 0 && items[activeSuggIdx]) {
+    // If suggestions are visible, Enter selects the highlighted item or the first one.
+    // Space and comma only select if an item is explicitly highlighted via arrows.
+    var shouldConfirm = !dropdown.hidden && items.length > 0 && (
+      (e.key === "Enter") ||
+      ((e.key === " " || e.key === ",") && activeSuggIdx >= 0)
+    );
+
+    if (shouldConfirm) {
       e.preventDefault();
-      var word = items[activeSuggIdx].querySelector(".suggestion-word").textContent;
+      var targetIdx = activeSuggIdx >= 0 ? activeSuggIdx : 0;
+      var word = items[targetIdx].querySelector(".suggestion-word").textContent;
       confirmSuggestion(word);
       return;
     }
