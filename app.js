@@ -436,6 +436,7 @@ function renderCards() {
 
     if (!hasMatch) {
       card.innerHTML =
+        '<button class="card-remove" data-idx="' + pillIdx + '" title="Remove word">✕</button>' +
         '<div class="sign-media-placeholder">🤷</div>' +
         '<div class="sign-label">' + esc(pill.rawWord) + '</div>' +
         '<span class="tier-badge tier-none">not found</span>';
@@ -464,6 +465,7 @@ function renderCards() {
       }
 
       card.innerHTML =
+        '<button class="card-remove" data-idx="' + pillIdx + '" title="Remove word">✕</button>' +
         mediaEl +
         '<div class="sign-media-placeholder" style="display:none">📷</div>' +
         '<div class="sign-label">' + esc(entry.baseWord) + '</div>' +
@@ -479,6 +481,12 @@ function renderCards() {
   container.querySelectorAll(".alt-btn").forEach(function(btn) {
     btn.addEventListener("click", function() {
       setCandidateIdx(parseInt(this.dataset.pill, 10), parseInt(this.dataset.cand, 10));
+    });
+  });
+
+  container.querySelectorAll(".card-remove").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      removePill(parseInt(this.dataset.idx, 10));
     });
   });
 
@@ -626,9 +634,17 @@ function onKeydown(e) {
   if (e.key === "Escape")     { hideSuggestions(); return; }
 
   if (e.key === "Enter" || e.key === " " || e.key === ",") {
-    if (!dropdown.hidden && activeSuggIdx >= 0 && items[activeSuggIdx]) {
+    // If suggestions are visible, Enter selects the highlighted item or the first one.
+    // Space and comma only select if an item is explicitly highlighted via arrows.
+    var shouldConfirm = !dropdown.hidden && items.length > 0 && (
+      (e.key === "Enter") ||
+      ((e.key === " " || e.key === ",") && activeSuggIdx >= 0)
+    );
+
+    if (shouldConfirm) {
       e.preventDefault();
-      var word = items[activeSuggIdx].querySelector(".suggestion-word").textContent;
+      var targetIdx = activeSuggIdx >= 0 ? activeSuggIdx : 0;
+      var word = items[targetIdx].querySelector(".suggestion-word").textContent;
       confirmSuggestion(word);
       return;
     }
